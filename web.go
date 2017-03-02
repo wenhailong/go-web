@@ -16,26 +16,26 @@ import (
 var g_mgoSession *mgo.Session
 
 func main() {
-	initialize()
+	initMongo()
+	initLog()
+	loadUserOrders()
+	startCounter()
 	startHttp()
 }
 
 func startHttp() {
-	http.HandleFunc("/getfollowers/coins", errorHandler(coinsHandler))
-	http.HandleFunc("/getfollowers/info", errorHandler(infoHandler))
-	http.HandleFunc("/getfollowers/buyfollower", errorHandler(buyfollowerHandler))
-	http.HandleFunc("/getfollowers/getuser", errorHandler(getuserHandler))
-	http.HandleFunc("/getfollowers/progress", errorHandler(progressHandler))
+	http.HandleFunc("/counter", counterHander)
+
+	http.HandleFunc("/getfollowers/coins", Decorate(coinsHandler, loggingAndRespError(), counting(&g_counter)))
+	http.HandleFunc("/getfollowers/info", Decorate(infoHandler, loggingAndRespError(), counting(&g_counter)))
+	http.HandleFunc("/getfollowers/buyfollower", Decorate(buyfollowerHandler, loggingAndRespError(), counting(&g_counter)))
+	http.HandleFunc("/getfollowers/getuser", Decorate(getuserHandler, loggingAndRespError(), counting(&g_counter)))
+	http.HandleFunc("/getfollowers/progress", Decorate(progressHandler, loggingAndRespError(), counting(&g_counter)))
+
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-}
-
-func initialize() {
-	initMongo()
-	initLog()
-	loadBuyerData()
 }
 
 func initMongo() {
@@ -72,40 +72,55 @@ func initLog() {
 
 	log.SetFormatter(&log.TextFormatter{})
 	log.SetOutput(f)
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.InfoLevel)
 }
 
-func loadBuyerData() {
+func loadUserOrders() {
 	collection := g_mgoSession.DB("follower").C("user")
 	queryStatement := bson.M{"orders": bson.M{"$elemMatch": bson.M{"status": false}}}
-	iter := collection.Find(queryStatement).Iter()
+	iter := collection.Find(queryStatement).Select(bson.M{"_id": 0, "userId": 1, "orders": 1}).Iter()
 
-	var result Buyer
+	var result bson.M
 	var counter int
 	for iter.Next(&result) {
-		g_buyerManager[result.UserId] = result
-		counter++
+		if orders, ok := result["orders"]; ok {
+			for _, order := range orders.([]interface{}) {
+
+				item := PushItem{&Order{
+					order.(bson.M)["orderId"].(string),
+					order.(bson.M)["coins"].(int64),
+					order.(bson.M)["date"].(int64),
+					order.(bson.M)["progress"].(int64),
+					order.(bson.M)["fans"].(int64),
+					order.(bson.M)["status"].(bool),
+				}, result["userId"].(string)}
+
+				g_pushManger.Add(&item)
+				counter++
+			}
+		}
 	}
 
 	if err := iter.Close(); err != nil {
-		fmt.Printf("load buyerdata failed. err=%v\n", err)
+		fmt.Printf("load user orders failed. err=%v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("load buyerdata success. count:%d\n", counter)
+	fmt.Printf("load user orders success. count:%d\n", counter)
 }
 
-func errorHandler(fn http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if err, ok := recover().(error); ok {
-				log.Error(err.Error())
-				responseError(w, err)
-			}
-		}()
+func startCounter() {
+	go func(c *Counter) {
+		lastRequest := c.Request()
 
-		fn(w, r)
-	}
+		for {
+			time.Sleep(1 * time.Second)
+
+			curRequest := c.Request()
+			c.SetRequestPerSecond(curRequest - lastRequest)
+			lastRequest = curRequest
+		}
+	}(&g_counter)
 }
 
 func responseError(w http.ResponseWriter, err error) {

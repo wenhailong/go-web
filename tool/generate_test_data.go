@@ -6,13 +6,19 @@ import (
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"math/rand"
+	"os"
 	"time"
 )
+
+func generateStatusData(fans int64, progress int64) bool {
+	return fans == progress
+}
 
 func main() {
 	session, err := mgo.Dial("mongodb://192.168.158.70:27000")
 	if err != nil {
-
+		fmt.Println("mgo.Dial failed. error=%v", err)
+		os.Exit(1)
 	}
 
 	collection := session.DB("follower").C("user")
@@ -20,18 +26,19 @@ func main() {
 
 	for i := 0; i < 100; i++ {
 		doc := make(bson.M)
-		doc["userid"] = generateUserId(i)
-		doc["clickCoins"] = rand.Int() % 200
+		doc["userId"] = generateUserId(i)
+		doc["coins"] = rand.Int() % 200
+		doc["lastPushDate"] = int64(0)
 
 		var orders []bson.M
 		for j := 0; j < rand.Int()%4; j++ {
 			order := make(bson.M)
-			order["orderid"] = generateUseridData()
+			order["orderId"] = generateUseridData()
 			order["date"] = generateOrderTimeData()
 			order["coins"] = generateCoinData()
-			order["fans"] = generateFansData(order["coins"].(int))
-			order["progress"] = generateProgressData(order["fans"].(int))
-			order["status"] = generateStatusData(order["fans"].(int), order["progress"].(int))
+			order["fans"] = generateFansData(order["coins"].(int64))
+			order["progress"] = generateProgressData(order["fans"].(int64))
+			order["status"] = generateStatusData(order["fans"].(int64), order["progress"].(int64))
 			orders = append(orders, order)
 		}
 
@@ -49,20 +56,16 @@ func main() {
 
 }
 
-func generateStatusData(fans int, progress int) bool {
-	return fans == progress
+func generateProgressData(fans int64) int64 {
+	return fans - rand.Int63()%fans
 }
 
-func generateProgressData(fans int) int {
-	return fans - rand.Int()%fans
-}
-
-func generateFansData(coin int) int {
+func generateFansData(coin int64) int64 {
 	return coin * 100
 }
 
-func generateCoinData() int {
-	return rand.Int()%10 + 1
+func generateCoinData() int64 {
+	return rand.Int63()%10 + 1
 }
 
 func generateUseridData() string {
