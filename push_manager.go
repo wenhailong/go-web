@@ -22,12 +22,12 @@ type PushItem struct {
 }
 
 func (p PushItem) Less(than llrb.Item) bool {
-	if p.Order.Date < than.(PushItem).Order.Date {
+	if p.Order.Date < than.(*PushItem).Order.Date {
 		return true
-	} else if p.Order.Date > than.(PushItem).Order.Date {
+	} else if p.Order.Date > than.(*PushItem).Order.Date {
 		return false
 	} else {
-		return p.UserId < than.(PushItem).UserId
+		return p.UserId != than.(*PushItem).UserId
 	}
 }
 
@@ -42,18 +42,20 @@ func (p *PushManager) Add(item *PushItem) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	p.items.InsertNoReplace(*item)
+	p.items.InsertNoReplace(item)
 }
 
-func (p *PushManager) push(w http.ResponseWriter, userId string, num int64) error {
+func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error {
 	session := g_mgoSession.Copy()
 	collection := session.DB("follower").C("user")
-	query := collection.Find(bson.M{"userId": userId}).Select(bson.M{"lastPushTime": 1})
-	var lastPushDate int64
-	err := query.One(&lastPushDate)
+	query := collection.Find(bson.M{"userId": userId}).Select(bson.M{"_id": 0, "lastPushDate": 1})
+	var result bson.M
+	err := query.One(&result)
 	if err != nil {
 		return NewError("[PushManager.push] query.one failed. error=%v", err)
 	}
+
+	lastPushDate := result["lastPushDate"].(int64)
 
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
@@ -66,6 +68,9 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int64) erro
 			return true
 		}
 		pushList = append(pushList, i.(*PushItem))
+		if len(pushList) == num {
+			return false
+		}
 
 		return true
 	})
@@ -74,16 +79,26 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int64) erro
 		return NewError("[PushManager.push] no follower")
 	}
 
+	userIDs := make([]string, 0, len(pushList))
+	for _, v := range pushList {
+		userIDs = append(userIDs, v.UserId)
+	}
+
+	err = responseToClient(w, bson.M{"userIDs": userIDs})
+	if err != nil {
+		return err
+	}
+
 	updatePairs := make([]interface{}, 0, len(pushList)*2)
 
 	for _, item := range pushList {
 		var s bson.M
 		var u bson.M
 		if item.Order.Progress+1 == item.Order.Fans {
-			u = bson.M{"progress": item.Order.Progress + 1, "status": true}
+			u = bson.M{"orders.progress": item.Order.Progress + 1, "status": true, "lastPushDate": item.Order.Date}
 
 		} else {
-			u = bson.M{"progress": item.Order.Progress + 1}
+			u = bson.M{"orders.progress": item.Order.Progress + 1, "lastPushDate": item.Order.Date}
 
 		}
 
@@ -97,16 +112,6 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int64) erro
 	_, err = bulk.Run()
 	if err != nil {
 		return NewError("[PushManager.push] bulk.run failed. error=%v", err)
-	}
-
-	userIDs := make([]string, 0, len(pushList))
-	for _, v := range pushList {
-		userIDs = append(userIDs, v.UserId)
-	}
-
-	err = responseToClient(w, bson.M{"userIDs": userIDs})
-	if err != nil {
-		return err
 	}
 
 	for _, v := range pushList {

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/satori/go.uuid"
+	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"io"
 	"net/http"
@@ -34,8 +36,27 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 	responseToClient(w, result)
 }
 
-func getuserHandler(w http.ResponseWriter, r *http.Request) {
+func getUserHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
 
+	checkError(validUserUrlParam(r.Form))
+
+	userId := r.Form["userId"][0]
+	checkError(g_pushManger.push(w, userId, 2))
+}
+
+func validUserUrlParam(values url.Values) error {
+	id := values["userId"][0]
+	if len(id) == 0 {
+		return NewError("[validBuyFollowerUrlParam] len(id) == 0.")
+	}
+
+	version := values["version"][0]
+	if !validVersion(version) {
+		return NewError("[validBuyFollowerUrlParam] version invalid. version=%v", version)
+	}
+
+	return nil
 }
 
 func buyfollowerHandler(w http.ResponseWriter, r *http.Request) {
@@ -48,10 +69,9 @@ func buyfollowerHandler(w http.ResponseWriter, r *http.Request) {
 	coinsInt, _ := strconv.Atoi(coins)
 	fans := r.Form["value"][0]
 	fansInt, _ := strconv.Atoi(fans)
-	orderId := r.Form["orderId"][0]
 
 	order := Order{
-		orderId,
+		fmt.Sprintf("%v", uuid.NewV4()),
 		time.Now().Unix(),
 		int64(coinsInt),
 		int64(fansInt),
@@ -61,77 +81,71 @@ func buyfollowerHandler(w http.ResponseWriter, r *http.Request) {
 	session := g_mgoSession.Copy()
 	collection := session.DB("follower").C("user")
 
-	query := collection.Find(bson.M{"userId": userId})
 	var result bson.M
-	err := query.One(&result)
-
+	queryStatement := bson.M{"userId": userId, "coins": bson.M{"$gte": coinsInt}}
+	query := collection.Find(queryStatement)
+	change := mgo.Change{Update: bson.M{"$inc": bson.M{"coins": -coinsInt}, "$addToSet": bson.M{"orders": order}}, ReturnNew: true}
+	_, err := query.Apply(change, &result)
 	if err != nil {
-		if err.Error() != "not found" {
-			err = NewError("[buyfollowerHandler] query.one failed. error=%v", err)
-			checkError(err)
-		} else {
-			doc := bson.M{
-				"userId":     userId,
-				"clickCoins": 0,
-				"orders":     order,
-			}
-
-			err := collection.Insert(doc)
-			if err != nil {
-				err = NewError("[buyfollowerHandler] collection.insert failed. error=%v", err)
-			}
-			checkError(err)
-
-			item := PushItem{&order, userId}
-			g_pushManger.Add(&item)
-
-			responseToClient(w, nil)
-		}
-	} else {
-		orderAlreadyExist := false
-		if orders, ok := result["orders"]; ok {
-			for _, order := range orders.([]map[string]interface{}) {
-				if orderId == order["orderId"].(string) {
-					orderAlreadyExist = true
-					break
-				}
-			}
-		}
-
-		if orderAlreadyExist {
-			responseToClient(w, nil)
-		} else {
-			doc := bson.M{
-				"userId":     userId,
-				"clickCoins": 0,
-				"orders": []bson.M{
-					bson.M{
-						"orderId":  orderId,
-						"date":     time.Now().Unix(),
-						"coins":    int64(coinsInt),
-						"fans":     int64(fansInt),
-						"progress": 0,
-						"status":   false,
-					},
-				},
-			}
-
-			err := collection.Update(bson.M{"userId": userId}, bson.M{"$push": bson.M{"orders": doc}})
-			if err != nil {
-				err = NewError("[buyfollowerHandler] collection.update failed. error=%v", err)
-			}
-			checkError(err)
-
-			item := PushItem{&order, userId}
-			g_pushManger.Add(&item)
-
-			responseToClient(w, nil)
-		}
+		err = NewError("[buyfollowerHandler] query.Apply failed. error=%v", err)
 	}
+	checkError(err)
+
+	item := PushItem{&order, userId}
+	g_pushManger.Add(&item)
+
+	respInfo := bson.M{"coins": result["coins"]}
+	responseToClient(w, respInfo)
 }
 
 func coinsHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
 
+	checkError(validCoinsUrlParam(r.Form))
+
+	session := g_mgoSession.Copy()
+	defer session.Close()
+
+	collection := session.DB("follower").C("user")
+
+	userId := r.Form["userId"][0]
+	coins := r.Form["coins"][0]
+	coinsInt, _ := strconv.Atoi(coins)
+
+	queryStatement := bson.M{"userId": userId}
+	change := mgo.Change{Update: bson.M{"$inc": bson.M{"coins": coinsInt}}, ReturnNew: true}
+
+	var result bson.M
+	_, err := collection.Find(queryStatement).Apply(change, &result)
+	if err != nil {
+		err = NewError("[coinsHandler] collection.Apply failed. error=%v", err)
+	}
+	checkError(err)
+
+	delete(result, "_id")
+	delete(result, "orders")
+
+	responseToClient(w, result)
+}
+
+func validCoinsUrlParam(values url.Values) error {
+	id := values["userId"][0]
+	if len(id) == 0 {
+		return errors.New("[validInfoUrlParam] len(id) == 0.")
+	}
+
+	version := values["version"][0]
+	if !validVersion(version) {
+		return errors.New(fmt.Sprintf("[validInfoUrlParaml] version invalid. version=%v", version))
+	}
+
+	coins := values["coins"][0]
+	_, err := strconv.Atoi(coins)
+	if err != nil {
+		return errors.New(fmt.Sprintf("[validInfoUrlParaml] coins invalid. coins=%v", coins))
+	}
+
+	return nil
 }
 
 func queryProgress(values url.Values) (bson.M, error) {
@@ -140,7 +154,8 @@ func queryProgress(values url.Values) (bson.M, error) {
 
 	collection := session.DB("follower").C("user")
 	queryStatement := bson.M{"userId": values["userId"][0]}
-	query := collection.Find(queryStatement)
+	selectorStatement := bson.M{"_id": 0, "userId": 1, "orders.fans": 1, "orders.progress": 1, "orders.status": 1}
+	query := collection.Find(queryStatement).Select(selectorStatement)
 
 	var result bson.M
 	err := query.One(&result)
@@ -159,8 +174,9 @@ func queryInfo(values url.Values) (bson.M, error) {
 	collection := session.DB("follower").C("user")
 
 	userId := values["userId"][0]
-	q := bson.M{"userId": userId}
-	query := collection.Find(q)
+	queryStatemnt := bson.M{"userId": userId}
+	selectorStatement := bson.M{"_id": 0, "userId": 1, "coins": 1, "orders.fans": 1, "orders.progress": 1, "orders.status": 1}
+	query := collection.Find(queryStatemnt).Select(selectorStatement)
 
 	var result bson.M
 	err := query.One(&result)
@@ -208,11 +224,6 @@ func validBuyFollowerUrlParam(values url.Values) error {
 	followersInt, err := strconv.Atoi(followers)
 	if err != nil || followersInt == 0 {
 		return NewError("[validBuyFollowerUrlParam] followers count invalid. count:%v", followers)
-	}
-
-	orderId := values["orderId"][0]
-	if len(orderId) != 36 {
-		return NewError("[validBuyFollowerUrlParam] orederid invalid. orderId:%v", orderId)
 	}
 
 	return nil

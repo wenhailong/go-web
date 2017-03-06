@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/mgo.v2"
@@ -16,11 +17,31 @@ import (
 var g_mgoSession *mgo.Session
 
 func main() {
-	initMongo()
+	parseCommandLine()
+
 	initLog()
+	initMongo()
 	loadUserOrders()
 	startCounter()
+
 	startHttp()
+}
+
+func parseCommandLine() {
+	flag.StringVar(&g_config.IP, "bind_ip", "", "http server ip. (Required)")
+	flag.IntVar(&g_config.Port, "port", DefaultPort, "http server port.")
+	flag.StringVar(&g_config.MongoUri, "mongoUri", "", "mongodb uri. (Required)")
+	flag.Parse()
+
+	if g_config.IP == "" {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	if g_config.MongoUri == "" {
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
 }
 
 func startHttp() {
@@ -29,20 +50,21 @@ func startHttp() {
 	http.HandleFunc("/getfollowers/coins", Decorate(coinsHandler, loggingAndRespError(), counting(&g_counter)))
 	http.HandleFunc("/getfollowers/info", Decorate(infoHandler, loggingAndRespError(), counting(&g_counter)))
 	http.HandleFunc("/getfollowers/buyfollower", Decorate(buyfollowerHandler, loggingAndRespError(), counting(&g_counter)))
-	http.HandleFunc("/getfollowers/getuser", Decorate(getuserHandler, loggingAndRespError(), counting(&g_counter)))
+	http.HandleFunc("/getfollowers/getuser", Decorate(getUserHandler, loggingAndRespError(), counting(&g_counter)))
 	http.HandleFunc("/getfollowers/progress", Decorate(progressHandler, loggingAndRespError(), counting(&g_counter)))
 
-	err := http.ListenAndServe(":8080", nil)
+	log.Infof("start http server. ip:%v port=%v", g_config.IP, g_config.Port)
+	err := http.ListenAndServe(fmt.Sprintf("%v:%v", g_config.IP, g_config.Port), nil)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Errorf(fmt.Sprintf("[startHttp] http.ListenAndServe failed. error=%v", err))
+		os.Exit(1)
 	}
 }
 
 func initMongo() {
-	mgoUri := "mongodb://192.168.158.70:27000"
-	session, err := mgo.Dial(mgoUri)
+	session, err := mgo.Dial(g_config.MongoUri)
 	if err != nil {
-		fmt.Println("[initMongo] connect to mongodb failed. mongoUri=", mgoUri)
+		log.Errorf("[initMongo] connect to mongodb failed. mongoUri=%v", g_config.MongoUri)
 		os.Exit(1)
 	}
 
@@ -102,11 +124,11 @@ func loadUserOrders() {
 	}
 
 	if err := iter.Close(); err != nil {
-		fmt.Printf("load user orders failed. err=%v\n", err)
+		log.Errorf("load user orders failed. err=%v", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("load user orders success. count:%d\n", counter)
+	log.Infof("load user orders success. count:%d", counter)
 }
 
 func startCounter() {
