@@ -28,19 +28,20 @@ func main() {
 }
 
 func parseCommandLine() {
+	requiredArgs := 2
+
+	flag.Usage = func() {
+		fmt.Printf("Usage: %s [OPTIONS] \noptions:\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+
 	flag.StringVar(&g_config.IP, "bind_ip", "", "http server ip. (Required)")
 	flag.IntVar(&g_config.Port, "port", DefaultPort, "http server port.")
 	flag.StringVar(&g_config.MongoUri, "mongoUri", "", "mongodb uri. (Required)")
 	flag.Parse()
 
-	if g_config.IP == "" {
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	if g_config.MongoUri == "" {
-		flag.PrintDefaults()
-		os.Exit(1)
+	if flag.NFlag() != requiredArgs {
+		flag.Usage()
 	}
 }
 
@@ -54,7 +55,9 @@ func startHttp() {
 	http.HandleFunc("/getfollowers/progress", Decorate(progressHandler, loggingAndRespError(), counting(&g_counter)))
 
 	log.Infof("start http server. ip:%v port=%v", g_config.IP, g_config.Port)
-	err := http.ListenAndServe(fmt.Sprintf("%v:%v", g_config.IP, g_config.Port), nil)
+
+	addr := fmt.Sprintf("%v:%v", g_config.IP, g_config.Port)
+	err := http.ListenAndServeTLS(addr, "server.crt", "server.key", nil)
 	if err != nil {
 		log.Errorf(fmt.Sprintf("[startHttp] http.ListenAndServe failed. error=%v", err))
 		os.Exit(1)
@@ -84,7 +87,7 @@ func initLog() {
 	now := time.Now()
 	logSuffix := fmt.Sprintf("-%d-%02d-%02dT%02d%02d%02d.log", now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second())
 	logName := filepath.Base(os.Args[0])
-	logName = logPath + "\\" + logName + logSuffix
+	logName = logPath + "//" + logName + logSuffix
 
 	f, err := os.OpenFile(logName, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {

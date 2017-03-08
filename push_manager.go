@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/petar/GoLLRB/llrb"
-	"gopkg.in/mgo.v2-unstable/bson"
+	"gopkg.in/mgo.v2/bson"
 	"net/http"
 	"sync"
 )
