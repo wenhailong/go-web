@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const USERID_LEN int = 9
+
 func progressHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
@@ -32,7 +34,7 @@ func infoHandler(w http.ResponseWriter, r *http.Request) {
 
 	userId := r.Form["userId"][0]
 	result, err := queryInfo(userId)
-	if err.(FollowerError).Code == ERROR_USER_NOT_FOUND {
+	if err != nil && err.(FollowerError).Code == ERROR_USER_NOT_FOUND {
 		err = CreateNewUser(userId)
 		checkError(err)
 
@@ -75,8 +77,8 @@ func validUserUrlParam(values url.Values) error {
 	}
 
 	id := values["userId"][0]
-	if len(id) == 0 {
-		return NewError(ERROR_URL_PARAM_INVALID, "[validBuyFollowerUrlParam] len(id) == 0.")
+	if len(id) == USERID_LEN {
+		return NewError(ERROR_URL_PARAM_INVALID, "[validBuyFollowerUrlParam] len(id) != USERID_LEN.")
 	}
 
 	if _, ok := values["version"]; !ok {
@@ -150,7 +152,11 @@ func coinsHandler(w http.ResponseWriter, r *http.Request) {
 	var result bson.M
 	_, err := collection.Find(queryStatement).Apply(change, &result)
 	if err != nil {
-		err = NewError(ERROR_DB_OPERATE_FAIELD, "[coinsHandler] collection.Apply failed. error=%v", err)
+		if err == mgo.ErrNotFound {
+			err = NewError(ERROR_USER_NOT_FOUND, "[coinsHandler] collection.Apply failed. error=%v", err)
+		} else {
+			err = NewError(ERROR_DB_OPERATE_FAIELD, "[coinsHandler] collection.Apply failed. error=%v", err)
+		}
 	}
 	checkError(err)
 
@@ -168,8 +174,8 @@ func validCoinsUrlParam(values url.Values) error {
 	}
 
 	id := values["userId"][0]
-	if len(id) == 0 {
-		return NewError(ERROR_URL_PARAM_INVALID, "[validInfoUrlParam] len(id) == 0.")
+	if len(id) != USERID_LEN {
+		return NewError(ERROR_URL_PARAM_INVALID, "[validInfoUrlParam] len(id) != USERID_LEN.")
 	}
 
 	if _, ok := values["version"]; !ok {
@@ -206,8 +212,13 @@ func queryProgress(values url.Values) (bson.M, error) {
 	var result bson.M
 	err := query.One(&result)
 	if err != nil {
-		err = NewError(ERROR_DB_OPERATE_FAIELD, "[queryProgress] query.one failed. error=%v", err.Error())
-		return nil, err
+		if err == mgo.ErrNotFound {
+			err = NewError(ERROR_USER_NOT_FOUND, "[queryProgress] query.one failed. error=%v", err.Error())
+			return nil, err
+		} else {
+			err = NewError(ERROR_DB_OPERATE_FAIELD, "[queryProgress] query.one failed. error=%v", err.Error())
+			return nil, err
+		}
 	}
 
 	return result, nil
@@ -259,8 +270,8 @@ func validBuyFollowerUrlParam(values url.Values) error {
 	}
 
 	id := values["userId"][0]
-	if len(id) == 0 {
-		return NewError(ERROR_URL_PARAM_INVALID, "[validBuyFollowerUrlParam] len(id) == 0.")
+	if len(id) != USERID_LEN {
+		return NewError(ERROR_URL_PARAM_INVALID, "[validBuyFollowerUrlParam] len(id) != USERID_LEN.")
 	}
 
 	if _, ok := values["version"]; !ok {
@@ -301,8 +312,8 @@ func validProgressUrlParam(values url.Values) error {
 	}
 
 	id := values["userId"][0]
-	if len(id) == 0 {
-		return NewError(ERROR_URL_PARAM_INVALID, "[validInfoUrlParam] len(id) == 0.")
+	if len(id) != USERID_LEN {
+		return NewError(ERROR_URL_PARAM_INVALID, "[validInfoUrlParam] len(id) != USERID_LEN.")
 	}
 
 	if _, ok := values["version"]; !ok {
@@ -323,8 +334,8 @@ func validInfoUrlParam(values url.Values) error {
 	}
 
 	id := values["userId"][0]
-	if len(id) == 0 {
-		return NewError(ERROR_URL_PARAM_INVALID, "[validInfoUrlParam] len(id) == 0.")
+	if len(id) != USERID_LEN {
+		return NewError(ERROR_URL_PARAM_INVALID, "[validInfoUrlParam] len(id) != USERID_LEN.")
 	}
 
 	if _, ok := values["version"]; !ok {
