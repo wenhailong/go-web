@@ -15,7 +15,7 @@ type Counter struct {
 	requestPerSecond int64
 }
 
-var g_counter Counter
+var gobalCounter Counter
 
 func (p *Counter) AddRequest(n int64) {
 	if p.Request() > CounterLimit {
@@ -66,15 +66,15 @@ func (p *Counter) Clean() {
 
 func counterHander(w http.ResponseWriter, r *http.Request) {
 	result := map[string]interface{}{
-		"request":          g_counter.Request(),
-		"latency":          g_counter.Latency(),
-		"aveLatency":       g_counter.AveLatency(),
-		"requestPerSecond": g_counter.RequestPerSecond(),
+		"request":          gobalCounter.Request(),
+		"latency":          gobalCounter.Latency(),
+		"aveLatency":       gobalCounter.AveLatency(),
+		"requestPerSecond": gobalCounter.RequestPerSecond(),
 	}
 
 	bResult, err := json.Marshal(result)
 	if err != nil {
-		err := NewError("[counterHander] json.Marshal failed. error=%v", err)
+		err := NewError(ERROR_INTERNAL, "[counterHander] json.Marshal failed. error=%v", err)
 		checkError(err)
 	}
 

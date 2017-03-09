@@ -27,13 +27,13 @@ func main() {
 	for i := 0; i < 100; i++ {
 		doc := make(bson.M)
 		doc["userId"] = generateUserId(i)
-		doc["coins"] = rand.Int() % 200
+		doc["coins"] = int64(rand.Int() % 200)
 		doc["lastPushDate"] = int64(0)
 
 		var orders []bson.M
 		for j := 0; j < rand.Int()%4; j++ {
 			order := make(bson.M)
-			order["orderId"] = generateUseridData()
+			order["orderId"] = generateOrderIdData()
 			order["date"] = generateOrderTimeData()
 			order["coins"] = generateCoinData()
 			order["fans"] = generateFansData(order["coins"].(int64))
@@ -68,7 +68,7 @@ func generateCoinData() int64 {
 	return rand.Int63()%10 + 1
 }
 
-func generateUseridData() string {
+func generateOrderIdData() string {
 	return fmt.Sprintf("%v", uuid.NewV4())
 }
 

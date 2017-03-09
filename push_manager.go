@@ -36,7 +36,7 @@ type PushManager struct {
 	items llrb.LLRB
 }
 
-var g_pushManger = PushManager{}
+var gobalPushManger = PushManager{}
 
 func (p *PushManager) Add(item *PushItem) {
 	p.mutex.Lock()
@@ -46,13 +46,13 @@ func (p *PushManager) Add(item *PushItem) {
 }
 
 func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error {
-	session := g_mgoSession.Copy()
+	session := gobalMgoSession.Copy()
 	collection := session.DB("follower").C("user")
 	query := collection.Find(bson.M{"userId": userId}).Select(bson.M{"_id": 0, "lastPushDate": 1})
 	var result bson.M
 	err := query.One(&result)
 	if err != nil {
-		return NewError("[PushManager.push] query.one failed. error=%v", err)
+		return NewError(ERROR_DB_OPERATE_FAIELD, "[PushManager.push] query.one failed. error=%v", err)
 	}
 
 	lastPushDate := result["lastPushDate"].(int64)
@@ -76,7 +76,7 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error 
 	})
 
 	if len(pushList) == 0 {
-		return NewError("[PushManager.push] no follower")
+		return NewError(ERROR_NO_BUYER, "[PushManager.push] no buyer")
 	}
 
 	userIDs := make([]string, 0, len(pushList))
@@ -111,7 +111,7 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error 
 	bulk.Update(updatePairs)
 	_, err = bulk.Run()
 	if err != nil {
-		return NewError("[PushManager.push] bulk.run failed. error=%v", err)
+		return NewError(ERROR_DB_OPERATE_FAIELD, "[PushManager.push] bulk.run failed. error=%v", err)
 	}
 
 	for _, v := range pushList {

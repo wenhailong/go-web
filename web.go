@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var g_mgoSession *mgo.Session
+var gobalMgoSession *mgo.Session
 
 func main() {
 	parseCommandLine()
@@ -35,9 +35,9 @@ func parseCommandLine() {
 		flag.PrintDefaults()
 	}
 
-	flag.StringVar(&g_config.IP, "bind_ip", "", "http server ip. (Required)")
-	flag.IntVar(&g_config.Port, "port", DefaultPort, "http server port.")
-	flag.StringVar(&g_config.MongoUri, "mongoUri", "", "mongodb uri. (Required)")
+	flag.StringVar(&gobalConfig.IP, "bind_ip", "", "http server ip. (Required)")
+	flag.IntVar(&gobalConfig.Port, "port", DefaultPort, "http server port.")
+	flag.StringVar(&gobalConfig.MongoUri, "mongoUri", "", "mongodb uri. (Required)")
 	flag.Parse()
 
 	if flag.NFlag() != requiredArgs {
@@ -48,15 +48,15 @@ func parseCommandLine() {
 func startHttp() {
 	http.HandleFunc("/counter", counterHander)
 
-	http.HandleFunc("/getfollowers/coins", Decorate(coinsHandler, loggingAndRespError(), counting(&g_counter)))
-	http.HandleFunc("/getfollowers/info", Decorate(infoHandler, loggingAndRespError(), counting(&g_counter)))
-	http.HandleFunc("/getfollowers/buyfollower", Decorate(buyfollowerHandler, loggingAndRespError(), counting(&g_counter)))
-	http.HandleFunc("/getfollowers/getuser", Decorate(getUserHandler, loggingAndRespError(), counting(&g_counter)))
-	http.HandleFunc("/getfollowers/progress", Decorate(progressHandler, loggingAndRespError(), counting(&g_counter)))
+	http.HandleFunc("/getfollowers/coins", Decorate(coinsHandler, loggingAndRespError(), counting(&gobalCounter)))
+	http.HandleFunc("/getfollowers/info", Decorate(infoHandler, loggingAndRespError(), counting(&gobalCounter)))
+	http.HandleFunc("/getfollowers/buyfollower", Decorate(buyfollowerHandler, loggingAndRespError(), counting(&gobalCounter)))
+	http.HandleFunc("/getfollowers/getuser", Decorate(getUserHandler, loggingAndRespError(), counting(&gobalCounter)))
+	http.HandleFunc("/getfollowers/progress", Decorate(progressHandler, loggingAndRespError(), counting(&gobalCounter)))
 
-	log.Infof("start http server. ip:%v port=%v", g_config.IP, g_config.Port)
+	log.Infof("start http server. ip:%v port=%v", gobalConfig.IP, gobalConfig.Port)
 
-	addr := fmt.Sprintf("%v:%v", g_config.IP, g_config.Port)
+	addr := fmt.Sprintf("%v:%v", gobalConfig.IP, gobalConfig.Port)
 	err := http.ListenAndServeTLS(addr, "server.crt", "server.key", nil)
 	if err != nil {
 		log.Errorf(fmt.Sprintf("[startHttp] http.ListenAndServe failed. error=%v", err))
@@ -65,13 +65,13 @@ func startHttp() {
 }
 
 func initMongo() {
-	session, err := mgo.Dial(g_config.MongoUri)
+	session, err := mgo.Dial(gobalConfig.MongoUri)
 	if err != nil {
-		log.Errorf("[initMongo] connect to mongodb failed. mongoUri=%v", g_config.MongoUri)
+		log.Errorf("[initMongo] connect to mongodb failed. mongoUri=%v", gobalConfig.MongoUri)
 		os.Exit(1)
 	}
 
-	g_mgoSession = session
+	gobalMgoSession = session
 }
 
 func initLog() {
@@ -101,7 +101,7 @@ func initLog() {
 }
 
 func loadUserOrders() {
-	collection := g_mgoSession.DB("follower").C("user")
+	collection := gobalMgoSession.DB("follower").C("user")
 	queryStatement := bson.M{"orders": bson.M{"$elemMatch": bson.M{"status": false}}}
 	iter := collection.Find(queryStatement).Select(bson.M{"_id": 0, "userId": 1, "orders": 1}).Iter()
 
@@ -120,7 +120,7 @@ func loadUserOrders() {
 					order.(bson.M)["status"].(bool),
 				}, result["userId"].(string)}
 
-				g_pushManger.Add(&item)
+				gobalPushManger.Add(&item)
 				counter++
 			}
 		}
@@ -145,17 +145,12 @@ func startCounter() {
 			c.SetRequestPerSecond(curRequest - lastRequest)
 			lastRequest = curRequest
 		}
-	}(&g_counter)
+	}(&gobalCounter)
 }
 
 func responseError(w http.ResponseWriter, err error) {
-	var response = struct {
-		Err string
-	}{
-		err.Error(),
-	}
-
-	respByte, err := json.Marshal(response)
+	err = err.(FollowerError)
+	respByte, err := json.Marshal(err)
 	if err != nil {
 		log.Error("[responseError] json.Marshaler failed. error=%v", err.Error())
 		return

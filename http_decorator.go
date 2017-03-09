@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"time"
@@ -13,9 +14,14 @@ func loggingAndRespError() Decorator {
 		return func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err, ok := recover().(error); ok {
-					log.Error(err.Error())
-
-					responseError(w, err)
+					e, ok := err.(FollowerError)
+					if ok {
+						w.WriteHeader(400)
+						log.Error(fmt.Sprintf("%v. errorCode=0x%x", e.Error(), e.Code))
+						responseError(w, e)
+					} else {
+						panic(err)
+					}
 				}
 			}()
 

@@ -10,4 +10,4 @@ type Config struct {
 	MongoUri string
 }
 
-var g_config = Config{}
+var gobalConfig = Config{}
