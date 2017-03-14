@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/satori/go.uuid"
 	"gopkg.in/mgo.v2"
@@ -14,8 +15,12 @@ func generateStatusData(fans int64, progress int64) bool {
 	return fans == progress
 }
 
+var gobalMongoUri string
+
 func main() {
-	session, err := mgo.Dial("mongodb://192.168.158.70:27000")
+	parseCommandLine()
+
+	session, err := mgo.Dial(gobalMongoUri)
 	if err != nil {
 		fmt.Println("mgo.Dial failed. error=%v", err)
 		os.Exit(1)
@@ -54,6 +59,22 @@ func main() {
 		fmt.Println("bulk.Run finish")
 	}
 
+}
+
+func parseCommandLine() {
+	requiredArgs := 1
+
+	flag.Usage = func() {
+		fmt.Printf("Usage: %s [OPTIONS] \noptions:\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+
+	flag.StringVar(&gobalMongoUri, "mongoUri", "", "mongodb uri. (Required)")
+	flag.Parse()
+
+	if flag.NFlag() != requiredArgs {
+		flag.Usage()
+	}
 }
 
 func generateProgressData(fans int64) int64 {
