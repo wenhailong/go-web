@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/petar/GoLLRB/llrb"
 	"gopkg.in/mgo.v2/bson"
 	"net/http"
@@ -64,6 +65,7 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error 
 	item := &PushItem{Order: order, UserId: userId}
 	pushList := make([]*PushItem, 0, num)
 	p.items.AscendGreaterOrEqual(item, func(i llrb.Item) bool {
+		fmt.Println(i.(*PushItem).Order.OrderId)
 		if i.(*PushItem).Order.Date == lastPushDate && i.(*PushItem).UserId == userId {
 			return true
 		}
@@ -89,16 +91,19 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error 
 		return err
 	}
 
-	updatePairs := make([]interface{}, 0, len(pushList)*2)
+	var s bson.M
+	var u bson.M
+	updatePairs := make([]interface{}, 0, len(pushList)*2+1)
 
 	for _, item := range pushList {
-		var s bson.M
-		var u bson.M
+		fmt.Println(item.Order.Fans)
+		fmt.Println(item.Order.Progress)
+
 		if item.Order.Progress+1 == item.Order.Fans {
-			u = bson.M{"orders.progress": item.Order.Progress + 1, "status": true, "lastPushDate": item.Order.Date}
+			u = bson.M{"$set": bson.M{"orders.$.progress": item.Order.Progress + 1, "orders.$.status": true}}
 
 		} else {
-			u = bson.M{"orders.progress": item.Order.Progress + 1, "lastPushDate": item.Order.Date}
+			u = bson.M{"$set": bson.M{"orders.$.progress": item.Order.Progress + 1}}
 
 		}
 
@@ -107,8 +112,16 @@ func (p *PushManager) push(w http.ResponseWriter, userId string, num int) error 
 		updatePairs = append(updatePairs, u)
 	}
 
+	s = bson.M{"userId": userId}
+	u = bson.M{"$set": bson.M{"lastPushDate": pushList[len(pushList)-1].Order.Date}}
+	updatePairs = append(updatePairs, s)
+	updatePairs = append(updatePairs, u)
+
 	bulk := collection.Bulk()
-	bulk.Update(updatePairs)
+	for i := 0; i < len(updatePairs); i += 2 {
+		bulk.Update(updatePairs[i], updatePairs[i+1])
+	}
+
 	_, err = bulk.Run()
 	if err != nil {
 		return NewError(ERROR_DB_OPERATE_FAIELD, "[PushManager.push] bulk.run failed. error=%v", err)

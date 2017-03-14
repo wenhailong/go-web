@@ -103,7 +103,7 @@ func initLog() {
 func loadUserOrders() {
 	collection := gobalMgoSession.DB("follower").C("user")
 	queryStatement := bson.M{"orders": bson.M{"$elemMatch": bson.M{"status": false}}}
-	iter := collection.Find(queryStatement).Select(bson.M{"_id": 0, "userId": 1, "orders": 1}).Iter()
+	iter := collection.Find(queryStatement).Select(bson.M{"_id": 0, "userId": 1, "orders": bson.M{"$elemMatch": bson.M{"status": false}}}).Iter()
 
 	var result bson.M
 	var counter int
@@ -115,8 +115,8 @@ func loadUserOrders() {
 					order.(bson.M)["orderId"].(string),
 					order.(bson.M)["coins"].(int64),
 					order.(bson.M)["date"].(int64),
-					order.(bson.M)["progress"].(int64),
 					order.(bson.M)["fans"].(int64),
+					order.(bson.M)["progress"].(int64),
 					order.(bson.M)["status"].(bool),
 				}, result["userId"].(string)}
 

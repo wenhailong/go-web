@@ -77,7 +77,7 @@ func validUserUrlParam(values url.Values) error {
 	}
 
 	id := values["userId"][0]
-	if len(id) == USERID_LEN {
+	if len(id) != USERID_LEN {
 		return NewError(ERROR_URL_PARAM_INVALID, "[validBuyFollowerUrlParam] len(id) != USERID_LEN.")
 	}
 
